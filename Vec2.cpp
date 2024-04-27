@@ -109,5 +109,5 @@ float Vec2::dist(const Vec2& rhs) const
 
 	float sumSquared = dxSquared + dySquared;
 
-	return sqrt(sumSquared);
+	return sumSquared;
 }
