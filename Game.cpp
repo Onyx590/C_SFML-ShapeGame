@@ -19,18 +19,20 @@ void Game::init(const std::string& path)
 	// use the premade player config, enemyConfig, BullitConfig variables
 	std::ifstream fin;
 	std::string objName;
-	fin.open("path");
+	fin.open(path);
 	while (fin >> objName)
 	{
 		if (objName == "Window") {
 			int width, height, frameLimit, fullscreen;
 			fin >> width >> height >> frameLimit >> fullscreen;
 			//set up defalut window parameters
-			m_window.create(sf::VideoMode(width, height), "Assignment 2");
-			m_window.setFramerateLimit(frameLimit);
+			
 			if (fullscreen) {
 				m_window.create(sf::VideoMode(width, height), "Assignment 2", sf::Style::Fullscreen);
 			}
+			else
+				m_window.create(sf::VideoMode(width, height), "Assignment 2");
+			m_window.setFramerateLimit(frameLimit);
 		}
 		else if (objName == "Player") {
 			fin >> m_playerConfig.SR >> m_playerConfig.CR >> m_playerConfig.S >> m_playerConfig.FR >> m_playerConfig.FG >> m_playerConfig.FB >> m_playerConfig.OR >> m_playerConfig.OG >> m_playerConfig.OB >> m_playerConfig.OT >> m_playerConfig.V;
@@ -50,6 +52,8 @@ void Game::init(const std::string& path)
 	ImGui::SFML::Init(m_window);
 
 	spawnPlayer();
+
+	run();
 }
 
 void Game::run()
@@ -58,19 +62,29 @@ void Game::run()
 	// some systems should function while paused (rendering)
 	// some systems shouldn't (movement/input)
 
+	m_running = m_window.isOpen();
+
 	while (m_running)
 	{
-		//update the entity manager
-		m_entities.update();
+		sf::Event event;
+		while (m_window.pollEvent(event)) {
+			ImGui::SFML::ProcessEvent(event);
+			if (event.type == sf::Event::Closed)
+				m_window.close();
+		}
 
 		//required update call to imgui
 		ImGui::SFML::Update(m_window, m_deltaClock.restart());
 
+		sGUI();
+
+		//update the entity manager
+		update();
 		sEnemySpawner();
 		sMovement();
 		sCollision();
 		sUserInput();
-		sGUI();
+		
 		sRender();
 
 		//increment the current frame	
@@ -103,7 +117,7 @@ void Game::spawnPlayer()
 	entity->cTransform = std::make_shared<CTransform>();
 
 	// the entity's shape
-	entity->cShape = std::make_shared<CShape>();
+	entity->cShape = std::make_shared<CShape>(m_playerConfig.SR, m_playerConfig.V, sf::Color(m_playerConfig.FR, m_playerConfig.FG, m_playerConfig.FB), sf::Color(m_playerConfig.OR, m_playerConfig.OG, m_playerConfig.OB), m_playerConfig.OT );
 	
 	// add an input component
 	entity->cInput = std::make_shared<CInput>();
@@ -120,15 +134,27 @@ void Game::spawnEnemy()
 	float ranX = static_cast<float>(std::rand() % static_cast<int>(m_window.getSize().x));
 	float ranY = static_cast<float>(std::rand() % static_cast<int>(m_window.getSize().y));
 
+	int ranV = static_cast<int>(std::rand() % (m_enemyConfig.VMAX - m_enemyConfig.VMIN + 1) + m_enemyConfig.VMIN);
+
+	float ranSx = static_cast<float>(std::rand() % static_cast<int>(m_enemyConfig.SMAX - m_enemyConfig.SMIN + 1) + m_enemyConfig.SMIN);
+	float ranSy = static_cast<float>(std::rand() % static_cast<int>(m_enemyConfig.SMAX - m_enemyConfig.SMIN + 1) + m_enemyConfig.SMIN);
+
+	int ranCR = static_cast<int>(std::rand() % 255);
+	int ranCG = static_cast<int>(std::rand() % 255);
+	int ranCB = static_cast<int>(std::rand() % 255);
+
 	if (ranX - m_enemyConfig.SR >= 0 && ranX + m_enemyConfig.SR <= m_window.getSize().x &&
 		ranY - m_enemyConfig.SR >= 0 && ranY + m_enemyConfig.SR <= m_window.getSize().y)
 	{
-		enemy->cTransform = std::make_shared<CTransform>(Vec2(ranX, ranY), Vec2(1, 1), 12);
+		enemy->cTransform = std::make_shared<CTransform>(Vec2(ranX, ranY), Vec2(ranSx, ranSy), 12);
 
 
-		enemy->cShape = std::make_shared<CShape>(m_enemyConfig.SR, 5, sf::Color(0,0,0), sf::Color(m_enemyConfig.OR, m_enemyConfig.OG, m_enemyConfig.OB), m_enemyConfig.OT);
+		enemy->cShape = std::make_shared<CShape>(m_enemyConfig.SR, ranV, sf::Color(ranCR, ranCG, ranCB), sf::Color(m_enemyConfig.OR, m_enemyConfig.OG, m_enemyConfig.OB), m_enemyConfig.OT);
 
-		
+		//enemy->cLifespan = std::make_shared<CLifespan>(m_enemyConfig.L);
+
+		enemy->cScore = std::make_shared<CScore>(ranV * 100);
+
 		auto m_lastEnemySpawnTime = m_currentFrame;
 
 	}
@@ -147,6 +173,24 @@ void Game::spawnSmallEnemies(std::shared_ptr<Entity> e)
 	//- spawn a number of small enemies equal to the vertices of the original enemy
 	// - set each small enemy to the same color as teh original, half the size
 	//- small enemies are worth double points of the original enemy
+
+	int vertices = e->cShape->circle.getPointCount();
+
+	for (int i = 1; i < (vertices + 1); i++)
+	{
+		auto sEnemy = m_entities.addEntity("Enemy");
+
+		sEnemy->cTransform = std::make_shared<CTransform>(e->cTransform->pos, e->cTransform->velocity, 360 / i);
+
+		float smallSize = e->cShape->circle.getRadius() * 0.5f;
+
+		sEnemy->cShape = std::make_shared<CShape>(smallSize, vertices, e->cShape->circle.getFillColor(), e->cShape->circle.getOutlineColor(), e->cShape->circle.getOutlineThickness());
+
+		int smallScore = e->cScore->score * 2;
+		sEnemy->cScore = std::make_shared<CScore>(smallScore);
+
+		sEnemy->cLifespan = std::make_shared<CLifespan>(m_enemyConfig.L);
+	}
 }
 
 // spawns a bullet from a given entity to a target location
@@ -156,13 +200,14 @@ void Game::spawnBullet(std::shared_ptr<Entity> entity, const Vec2& target)
 	//  - bullet speed is given as a scalar speed
 	// - you must set the velocity by using formula in notes
 	auto bullet = m_entities.addEntity("Bullet");
+	Vec2 velocity = target - entity->cTransform->pos;
+	float angle = atan2f(velocity.y, velocity.x);
 	
-	if (m_player.cInput->shoot)
-	{
-		bullet->cShape = std::make_shared<CShape>(m_bulletConfig.SR, m_bulletConfig.V, sf::Color(m_bulletConfig.FR, m_bulletConfig.FG, m_bulletConfig.FB), sf::Color(m_bulletConfig.OR, m_bulletConfig.OG, m_bulletConfig.OB), m_bulletConfig.OT);
 
-
-	}
+	bullet->cShape = std::make_shared<CShape>(m_bulletConfig.SR, m_bulletConfig.V, sf::Color(m_bulletConfig.FR, m_bulletConfig.FG, m_bulletConfig.FB), sf::Color(m_bulletConfig.OR, m_bulletConfig.OG, m_bulletConfig.OB), m_bulletConfig.OT);
+	bullet->cTransform = std::make_shared<CTransform>(entity->cTransform->pos, velocity, angle);
+	bullet->cLifespan = std::make_shared<CLifespan>(m_bulletConfig.L);
+	
 
 }
 
@@ -244,7 +289,7 @@ void Game::sMovement()
 
 void Game::sLifespan()
 {
-
+	
 	//todo: implement all lifespann functionality
 
 	//for all entities
@@ -254,6 +299,30 @@ void Game::sLifespan()
 		// scale its alpha channel properly
 	//	if it has lifespan and its  time is up
 	//		destroy the entity
+
+	for (auto& e : m_entities.getEntities())
+	{
+		if (e->cLifespan)
+		{
+			if (e->cLifespan->remaining > 0)
+			{
+				if (m_currentFrame % e->cLifespan->total == 0)
+				{
+					e->cLifespan->remaining--;
+
+					float alphaScale = static_cast<float>(e->cLifespan->remaining) / static_cast<float>(e->cLifespan->total);
+					sf::Color shapeColor = e->cShape->circle.getFillColor();
+					shapeColor.a = static_cast<float>(alphaScale * 255);
+					e->cShape->circle.setFillColor(shapeColor);
+				}
+			}
+			else
+			{
+				e->destroy();
+			}
+		}
+		
+	}
 }
 
 void Game::sCollision()
@@ -300,27 +369,49 @@ void Game::sCollision()
 void Game::sEnemySpawner()
 {
 	//todo: code which implements enemy spawning should go here
+	if (m_currentFrame % m_enemyConfig.SI == 0)
+	{
+		spawnEnemy(); // Spawn a new enemy
+		
+	}
 }
 
 void Game::sGUI()
 {
+	bool collisioncondi;
+
 	ImGui::Begin("");
 	ImGui::Text("Test run of Menu GUI");
 
+	if (ImGui::TreeNode("System Dropdown"))
+	{
+		ImGui::Checkbox("Pause", &m_paused);
+		ImGui::Checkbox("Collision System", &collisioncondi);
+
+	}
+	if (ImGui::TreeNode("Display Entities"))
+	{
+		ImGui::BeginChild("Scrolling");
+		for (auto& entity : m_entities.getEntities())
+		{
+			std::string entityInfo = "ID: " + std::to_string(entity->id()) +
+				", Tag: " + entity->tag() +
+				", PosX: " + std::to_string(entity->cTransform->pos.x) +
+				", PosY: " + std::to_string(entity->cTransform->pos.y);
+
+			ImGui::Text("%s", entityInfo.c_str());
+		}
+		ImGui::EndChild();
+	}
 	ImGui::SliderInt("Enemy Spawn Interval", &m_enemyConfig.SI, 1, 10);
+	static int clicked = 0;
+	if (ImGui::Button("SpawnEnemy")) 
+	{
+		sEnemySpawner();
+	}
 
 	// Below is the information on entities
-	ImGui::BeginChild("Scrolling");
-	for (auto& entity : m_entities.getEntities())
-	{
-		std::string entityInfo = "ID: " + std::to_string(entity->id()) +
-			", Tag: " + entity->tag() +
-			", PosX: " + std::to_string(entity->cTransform->pos.x) +
-			", PosY: " + std::to_string(entity->cTransform->pos.y);
-
-		ImGui::Text("%s", entityInfo.c_str());
-	}
-	ImGui::EndChild();
+	
 }
 
 void Game::sRender()

@@ -111,3 +111,24 @@ float Vec2::dist(const Vec2& rhs) const
 
 	return sumSquared;
 }
+
+Vec2 Vec2::normalize() const
+{
+	float dx = this->x;
+	float dy = this->y;
+
+	float dxSquared = dx * dx;
+	float dySquared = dy * dy;
+
+	float mag = sqrtf(dxSquared + dySquared);
+
+	if (mag != 0) {
+		float inverseMag = 1.0f / mag;
+		return Vec2(dx * inverseMag, dy * inverseMag);
+	}
+	else {
+		return Vec2(0, 0);
+	}
+
+	
+}
